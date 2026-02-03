@@ -31,7 +31,7 @@ const lv_img_dsc_t *anim_imgs[] = {
 
 static lv_obj_t *find_animation_object(lv_obj_t *parent) {
     // Search for animation object in parent's children
-    // Look for animimg first (animated), then img (static)
+    // Look for animimg first (animated), then img/image (static)
     uint32_t child_cnt = lv_obj_get_child_cnt(parent);
     for (int i = child_cnt - 1; i >= 0; i--) {
         lv_obj_t *child = lv_obj_get_child(parent, i);
@@ -40,12 +40,15 @@ static lv_obj_t *find_animation_object(lv_obj_t *parent) {
             return child;
         }
     }
-    // If no animimg found, look for img object (static animation)
+    // If no animimg found, look for img/image object (static animation)
+    // Try to identify by checking if it uses one of our animation images
     for (int i = child_cnt - 1; i >= 0; i--) {
         lv_obj_t *child = lv_obj_get_child(parent, i);
-        if (lv_obj_check_type(child, &lv_img_class)) {
+        // Try to get source - lv_img_get_src works for both lv_img and lv_image
+        // We'll identify the animation object by its image source
+        const void *src = lv_img_get_src(child);
+        if (src != NULL) {
             // Verify it's using one of our animation images
-            const void *src = lv_img_get_src(child);
             for (int j = 0; j < 16; j++) {
                 if (src == anim_imgs[j]) {
                     return child;
