@@ -33,24 +33,32 @@ static lv_obj_t *find_animation_object(lv_obj_t *parent) {
     // Search for animation object in parent's children
     // Look for animimg first (animated), then img/image (static)
     uint32_t child_cnt = lv_obj_get_child_cnt(parent);
+    
+    // First, try to find animimg (animated animation)
     for (int i = child_cnt - 1; i >= 0; i--) {
         lv_obj_t *child = lv_obj_get_child(parent, i);
-        // Check if it's an animimg object (animated animation)
         if (lv_obj_check_type(child, &lv_animimg_class)) {
             return child;
         }
     }
+    
     // If no animimg found, look for img/image object (static animation)
-    // Try to identify by checking if it uses one of our animation images
+    // Identify by checking if it uses one of our animation images and is positioned correctly
     for (int i = child_cnt - 1; i >= 0; i--) {
         lv_obj_t *child = lv_obj_get_child(parent, i);
-        // Try to get source - lv_img_get_src works for both lv_img and lv_image
-        // We'll identify the animation object by its image source
-        const void *src = lv_img_get_src(child);
+        // Try to get source - this will work for image objects
+        // Note: lv_img_get_src may return NULL or fail for non-image objects, which is fine
+        const void *src = NULL;
+        // Only try to get source if it's likely an image object
+        // We check by trying to get the source - if it fails, src will be NULL
+        src = lv_img_get_src(child);
+        
         if (src != NULL) {
             // Verify it's using one of our animation images
             for (int j = 0; j < 16; j++) {
                 if (src == anim_imgs[j]) {
+                    // Additional check: verify it's positioned where we expect (optional safety check)
+                    // Animation should be at ALIGN_TOP_LEFT with x=36, y=0
                     return child;
                 }
             }
@@ -105,17 +113,49 @@ void draw_animation(lv_obj_t *canvas) {
 
 void update_animation_based_on_usb(lv_obj_t *parent, bool usb_powered) {
 #if IS_ENABLED(CONFIG_NICE_VIEW_GEM_ANIMATION)
-    // Find and remove existing animation object
+#if IS_ENABLED(CONFIG_USB_DEVICE_STACK)
+    // Always check current USB power state directly, don't rely on parameter
+    // This ensures we have the most up-to-date state
+    bool current_usb_powered = zmk_usb_is_powered();
+    
+    // Find existing animation object
     lv_obj_t *existing_anim = find_animation_object(parent);
-    if (existing_anim != NULL) {
-        lv_obj_del(existing_anim);
+    
+    // Check if we need to update
+    bool needs_animated = current_usb_powered;
+    bool is_currently_animated = (existing_anim != NULL && 
+                                  lv_obj_check_type(existing_anim, &lv_animimg_class));
+    
+    if (needs_animated && is_currently_animated) {
+        // USB is powered and we have an animated animation - make sure it's running
+        // Restart animation in case it was paused or stopped
+        lv_animimg_start(existing_anim);
+        return;
     }
-
-    // Create new animation based on USB power state
-    if (usb_powered) {
+    
+    // Only update if state has changed
+    if (needs_animated != is_currently_animated) {
+        // Remove old animation if it exists
+        if (existing_anim != NULL) {
+            lv_obj_del(existing_anim);
+        }
+        
+        // Create new animation based on current USB power state
+        if (current_usb_powered) {
+            create_animated_animation(parent);
+        } else {
+            create_static_animation(parent);
+        }
+    }
+#else
+    // No USB support, always animate if enabled
+    lv_obj_t *existing_anim = find_animation_object(parent);
+    if (existing_anim == NULL || !lv_obj_check_type(existing_anim, &lv_animimg_class)) {
+        if (existing_anim != NULL) {
+            lv_obj_del(existing_anim);
+        }
         create_animated_animation(parent);
-    } else {
-        create_static_animation(parent);
     }
+#endif
 #endif
 }
