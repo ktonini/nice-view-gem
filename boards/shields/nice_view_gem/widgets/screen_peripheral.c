@@ -44,6 +44,8 @@ static void set_battery_status(struct zmk_widget_screen *widget,
                                struct battery_status_state state) {
 #if IS_ENABLED(CONFIG_USB_DEVICE_STACK)
     widget->state.charging = state.usb_present;
+    // Update animation based on USB power state
+    update_animation_based_on_usb(widget->obj, state.usb_present);
 #endif /* IS_ENABLED(CONFIG_USB_DEVICE_STACK) */
 
     widget->state.battery = state.level;
