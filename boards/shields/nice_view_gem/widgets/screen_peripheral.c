@@ -54,7 +54,7 @@ static void ensure_animation_active_work(struct k_work *work) {
 }
 
 // Keep display active when USB is connected by reporting activity
-static void keep_display_active_work(struct k_work *work) {
+static void keep_display_active_handler(struct k_work *work) {
     bool usb_powered = zmk_usb_is_powered();
     
     if (usb_powered) {
@@ -223,7 +223,7 @@ int zmk_widget_screen_init(struct zmk_widget_screen *widget, lv_obj_t *parent) {
     // Initialize work queue for periodic animation checks
     k_work_init_delayable(&animation_check_work, ensure_animation_active_work);
     // Initialize work queue for keeping display active when USB connected
-    k_work_init_delayable(&keep_display_active_work, keep_display_active_work);
+    k_work_init_delayable(&keep_display_active_work, keep_display_active_handler);
     
     // If USB is already connected at init, start the periodic checks
     if (zmk_usb_is_powered()) {
