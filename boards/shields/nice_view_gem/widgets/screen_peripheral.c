@@ -30,23 +30,23 @@ static void ensure_animation_active_work(struct k_work *work) {
     
     if (usb_powered) {
         // USB is connected - verify animation state and fix if needed
-        // Only recreate if animation is missing or static (not if already animated)
-        // This prevents hiccups from restarting running animations
         SYS_SLIST_FOR_EACH_CONTAINER(&widgets, widget, node) {
             lv_obj_t *anim = find_animation_object(widget->obj);
             bool is_animated = (anim != NULL && lv_obj_check_type(anim, &lv_animimg_class));
             
             if (!is_animated) {
                 // Animation doesn't exist or is static - create/recreate animated version
-                // This handles cases where animation was deleted, switched to static, or paused
                 update_animation_based_on_usb(widget->obj, true);
+            } else {
+                // Animation exists - gently restart to handle paused state
+                // This is needed because display blanking can pause animations
+                // Restarting a running animation should be a no-op in LVGL, but if paused it will resume
+                lv_animimg_start(anim);
             }
-            // If animation already exists and is animated, leave it alone to avoid hiccups
-            // LVGL should keep it running automatically
         }
         
-        // Schedule next check in 2 seconds - frequent enough to catch pauses quickly
-        k_work_schedule(&animation_check_work, K_SECONDS(2));
+        // Schedule next check in 3 seconds - balance between catching pauses and avoiding overhead
+        k_work_schedule(&animation_check_work, K_SECONDS(3));
     }
 }
 #endif
@@ -65,6 +65,18 @@ static void draw_top(lv_obj_t *widget, const struct status_state *state) {
 
     // Rotate for horizontal display
     rotate_canvas(canvas);
+    
+#if IS_ENABLED(CONFIG_USB_DEVICE_STACK) && IS_ENABLED(CONFIG_NICE_VIEW_GEM_ANIMATION)
+    // When display refreshes (e.g., wakes from blanking), ensure animation is running if USB connected
+    // This handles cases where display blanking paused the animation
+    if (zmk_usb_is_powered()) {
+        lv_obj_t *anim = find_animation_object(widget);
+        if (anim != NULL && lv_obj_check_type(anim, &lv_animimg_class)) {
+            // Animation exists - ensure it's running (no-op if already running, restarts if paused)
+            lv_animimg_start(anim);
+        }
+    }
+#endif
 }
 
 /**
