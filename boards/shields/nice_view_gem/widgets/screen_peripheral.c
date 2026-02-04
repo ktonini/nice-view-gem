@@ -65,6 +65,19 @@ static void draw_top(lv_obj_t *widget, const struct status_state *state) {
 
     // Rotate for horizontal display
     rotate_canvas(canvas);
+    
+#if IS_ENABLED(CONFIG_USB_DEVICE_STACK) && IS_ENABLED(CONFIG_NICE_VIEW_GEM_ANIMATION)
+    // When display refreshes (e.g., wakes from blanking), restart animation if USB connected
+    // This handles cases where display blanking paused the animation
+    if (zmk_usb_is_powered()) {
+        lv_obj_t *anim = find_animation_object(widget);
+        if (anim != NULL && lv_obj_check_type(anim, &lv_animimg_class)) {
+            // Animation exists - restart it to resume if paused
+            // This only happens on display refresh, not periodically, so shouldn't cause hiccups
+            lv_animimg_start(anim);
+        }
+    }
+#endif
 }
 
 /**
