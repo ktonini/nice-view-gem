@@ -29,27 +29,24 @@ static void ensure_animation_active_work(struct k_work *work) {
     bool usb_powered = zmk_usb_is_powered();
     
     if (usb_powered) {
-        // USB is connected - check if animation needs attention
+        // USB is connected - check if animation needs to be recreated
+        // Only recreate if missing or static - don't touch running animations to avoid hiccups
         SYS_SLIST_FOR_EACH_CONTAINER(&widgets, widget, node) {
             lv_obj_t *anim = find_animation_object(widget->obj);
             bool is_animated = (anim != NULL && lv_obj_check_type(anim, &lv_animimg_class));
             
             if (!is_animated) {
                 // Animation doesn't exist or is static - recreate animated version
+                // This handles cases where display blanking deleted or switched the animation
                 update_animation_based_on_usb(widget->obj, true);
-            } else {
-                // Animation exists - check if it's actually running
-                // If paused (e.g., by display blanking), restart it gently
-                if (!is_animation_running(anim)) {
-                    // Animation is paused - restart it
-                    lv_animimg_start(anim);
-                }
-                // If already running, leave it alone to avoid hiccups
             }
+            // If animation exists and is animated, leave it completely alone
+            // Don't restart it even if paused - that causes hiccups
+            // The animation should resume automatically when display wakes
         }
         
-        // Schedule next check in 2 seconds - frequent enough to catch pauses, not too frequent to cause overhead
-        k_work_schedule(&animation_check_work, K_SECONDS(2));
+        // Schedule next check in 1 second - frequent enough to catch deletions quickly
+        k_work_schedule(&animation_check_work, K_SECONDS(1));
     }
 }
 #endif
