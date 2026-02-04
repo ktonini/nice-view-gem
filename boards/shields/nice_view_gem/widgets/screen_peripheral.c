@@ -62,9 +62,8 @@ static void keep_display_active_handler(struct k_work *work) {
         // Report activity to prevent display blanking when USB is connected
         // This keeps the display active and animations running smoothly
         // We publish an activity_state_changed event to reset the idle timer
-        struct zmk_activity_state_changed *ev = new_zmk_activity_state_changed();
-        ev->state = ZMK_ACTIVITY_ACTIVE;
-        ZMK_EVENT_RAISE(ev);
+        raise_zmk_activity_state_changed(
+            (struct zmk_activity_state_changed){.state = ZMK_ACTIVITY_ACTIVE});
         
         // Schedule next activity report in 10 seconds
         // This is frequent enough to prevent blanking but not too frequent
