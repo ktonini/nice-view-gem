@@ -12,7 +12,6 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #include <zmk/ble.h>
 #include <zmk/display.h>
 #include <zmk/usb.h>
-#include <zmk/work_queue.h>
 
 #include "animation.h"
 #include "battery.h"
