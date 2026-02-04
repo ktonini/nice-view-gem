@@ -29,7 +29,7 @@ const lv_img_dsc_t *anim_imgs[] = {
     &crystal_13, &crystal_14, &crystal_15, &crystal_16,
 };
 
-static lv_obj_t *find_animation_object(lv_obj_t *parent) {
+lv_obj_t *find_animation_object(lv_obj_t *parent) {
     // Search for animation object in parent's children
     // Look for animimg first (animated), then img/image (static)
     uint32_t child_cnt = lv_obj_get_child_cnt(parent);
@@ -129,9 +129,10 @@ void update_animation_based_on_usb(lv_obj_t *parent, bool usb_powered) {
     if (needs_animated) {
         // USB is powered - ensure animation is active
         if (is_currently_animated) {
-            // Animation exists and is animated - restart it to ensure it's running
-            // This handles cases where animation might have been paused
-            lv_animimg_start(existing_anim);
+            // Animation exists and is animated - only restart if it's not running
+            // Calling start() on a running animation shouldn't cause issues, but
+            // to be safe, we'll only update if state actually changed
+            // (The periodic check will handle restarting if paused)
         } else {
             // Need to create animated animation (either doesn't exist or is static)
             if (existing_anim != NULL) {

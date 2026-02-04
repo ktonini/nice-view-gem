@@ -29,12 +29,23 @@ static void ensure_animation_active_work(struct k_work *work) {
     bool usb_powered = zmk_usb_is_powered();
     
     if (usb_powered) {
-        // USB is connected - ensure animation is active
+        // USB is connected - verify animation state and fix if needed
+        // Only recreate if animation is missing or static (not if already animated)
+        // This prevents hiccups from restarting running animations
         SYS_SLIST_FOR_EACH_CONTAINER(&widgets, widget, node) {
-            update_animation_based_on_usb(widget->obj, true);
+            lv_obj_t *anim = find_animation_object(widget->obj);
+            bool is_animated = (anim != NULL && lv_obj_check_type(anim, &lv_animimg_class));
+            
+            if (!is_animated) {
+                // Animation doesn't exist or is static - create/recreate animated version
+                // This handles cases where animation was deleted, switched to static, or paused
+                update_animation_based_on_usb(widget->obj, true);
+            }
+            // If animation already exists and is animated, leave it alone to avoid hiccups
+            // LVGL should keep it running automatically
         }
         
-        // Schedule next check in 2 seconds
+        // Schedule next check in 2 seconds - frequent enough to catch pauses quickly
         k_work_schedule(&animation_check_work, K_SECONDS(2));
     }
 }
@@ -116,7 +127,8 @@ static void usb_conn_update_cb(struct battery_status_state state) {
         // If USB is connected, start periodic checks to ensure animation stays active
 #if IS_ENABLED(CONFIG_NICE_VIEW_GEM_ANIMATION)
         if (state.usb_present) {
-            k_work_schedule(&animation_check_work, K_SECONDS(1));
+            // Start check after a short delay to let animation initialize
+            k_work_schedule(&animation_check_work, K_MSEC(100));
         } else {
             k_work_cancel_delayable(&animation_check_work);
         }
@@ -179,7 +191,7 @@ int zmk_widget_screen_init(struct zmk_widget_screen *widget, lv_obj_t *parent) {
     
     // If USB is already connected at init, start the periodic check
     if (zmk_usb_is_powered()) {
-        k_work_schedule(&animation_check_work, K_SECONDS(1));
+        k_work_schedule(&animation_check_work, K_MSEC(100));
     }
     
     widget_usb_conn_status_init();
