@@ -67,6 +67,24 @@ lv_obj_t *find_animation_object(lv_obj_t *parent) {
     return NULL;
 }
 
+// Check if animation is actually running (not paused)
+// Returns true if animation exists and appears to be running
+bool is_animation_running(lv_obj_t *anim) {
+    if (anim == NULL || !lv_obj_check_type(anim, &lv_animimg_class)) {
+        return false;
+    }
+    
+    // Check if object is visible (paused animations might be hidden)
+    if (!lv_obj_has_flag(anim, LV_OBJ_FLAG_HIDDEN)) {
+        // Animation exists and is visible - assume it's running
+        // Note: LVGL doesn't provide a direct API to check if animimg is paused,
+        // so we'll use visibility as a proxy
+        return true;
+    }
+    
+    return false;
+}
+
 static void create_static_animation(lv_obj_t *canvas) {
     lv_obj_t *art = lv_img_create(canvas);
 
