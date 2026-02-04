@@ -12,7 +12,8 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #include <zmk/ble.h>
 #include <zmk/display.h>
 #include <zmk/usb.h>
-#include <zmk/activity.h>
+#include <zmk/events/activity_state_changed.h>
+#include <zmk/event_manager.h>
 
 #include "animation.h"
 #include "battery.h"
@@ -60,7 +61,10 @@ static void keep_display_active_handler(struct k_work *work) {
     if (usb_powered) {
         // Report activity to prevent display blanking when USB is connected
         // This keeps the display active and animations running smoothly
-        zmk_activity();
+        // We publish an activity_state_changed event to reset the idle timer
+        struct zmk_activity_state_changed *ev = new_zmk_activity_state_changed();
+        ev->state = ZMK_ACTIVITY_ACTIVE;
+        ZMK_EVENT_RAISE(ev);
         
         // Schedule next activity report in 10 seconds
         // This is frequent enough to prevent blanking but not too frequent
