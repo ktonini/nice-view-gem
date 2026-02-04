@@ -29,24 +29,27 @@ static void ensure_animation_active_work(struct k_work *work) {
     bool usb_powered = zmk_usb_is_powered();
     
     if (usb_powered) {
-        // USB is connected - verify animation state and fix if needed
+        // USB is connected - check if animation needs attention
         SYS_SLIST_FOR_EACH_CONTAINER(&widgets, widget, node) {
             lv_obj_t *anim = find_animation_object(widget->obj);
             bool is_animated = (anim != NULL && lv_obj_check_type(anim, &lv_animimg_class));
             
             if (!is_animated) {
-                // Animation doesn't exist or is static - create/recreate animated version
+                // Animation doesn't exist or is static - recreate animated version
                 update_animation_based_on_usb(widget->obj, true);
             } else {
-                // Animation exists - gently restart to handle paused state
-                // This is needed because display blanking can pause animations
-                // Restarting a running animation should be a no-op in LVGL, but if paused it will resume
-                lv_animimg_start(anim);
+                // Animation exists - check if it's actually running
+                // If paused (e.g., by display blanking), restart it gently
+                if (!is_animation_running(anim)) {
+                    // Animation is paused - restart it
+                    lv_animimg_start(anim);
+                }
+                // If already running, leave it alone to avoid hiccups
             }
         }
         
-        // Schedule next check in 3 seconds - balance between catching pauses and avoiding overhead
-        k_work_schedule(&animation_check_work, K_SECONDS(3));
+        // Schedule next check in 2 seconds - frequent enough to catch pauses, not too frequent to cause overhead
+        k_work_schedule(&animation_check_work, K_SECONDS(2));
     }
 }
 #endif
@@ -65,18 +68,6 @@ static void draw_top(lv_obj_t *widget, const struct status_state *state) {
 
     // Rotate for horizontal display
     rotate_canvas(canvas);
-    
-#if IS_ENABLED(CONFIG_USB_DEVICE_STACK) && IS_ENABLED(CONFIG_NICE_VIEW_GEM_ANIMATION)
-    // When display refreshes (e.g., wakes from blanking), ensure animation is running if USB connected
-    // This handles cases where display blanking paused the animation
-    if (zmk_usb_is_powered()) {
-        lv_obj_t *anim = find_animation_object(widget);
-        if (anim != NULL && lv_obj_check_type(anim, &lv_animimg_class)) {
-            // Animation exists - ensure it's running (no-op if already running, restarts if paused)
-            lv_animimg_start(anim);
-        }
-    }
-#endif
 }
 
 /**
@@ -139,8 +130,8 @@ static void usb_conn_update_cb(struct battery_status_state state) {
         // If USB is connected, start periodic checks to ensure animation stays active
 #if IS_ENABLED(CONFIG_NICE_VIEW_GEM_ANIMATION)
         if (state.usb_present) {
-            // Start check after a short delay to let animation initialize
-            k_work_schedule(&animation_check_work, K_MSEC(100));
+            // Start check immediately to verify animation state
+            k_work_schedule(&animation_check_work, K_MSEC(50));
         } else {
             k_work_cancel_delayable(&animation_check_work);
         }
@@ -203,7 +194,7 @@ int zmk_widget_screen_init(struct zmk_widget_screen *widget, lv_obj_t *parent) {
     
     // If USB is already connected at init, start the periodic check
     if (zmk_usb_is_powered()) {
-        k_work_schedule(&animation_check_work, K_MSEC(100));
+        k_work_schedule(&animation_check_work, K_MSEC(50));
     }
     
     widget_usb_conn_status_init();
