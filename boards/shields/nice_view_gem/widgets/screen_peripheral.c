@@ -12,6 +12,7 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #include <zmk/ble.h>
 #include <zmk/display.h>
 #include <zmk/usb.h>
+#include <zmk/work_queue.h>
 
 #include "animation.h"
 #include "battery.h"
@@ -19,6 +20,26 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #include "screen_peripheral.h"
 
 static sys_slist_t widgets = SYS_SLIST_STATIC_INIT(&widgets);
+
+#if IS_ENABLED(CONFIG_USB_DEVICE_STACK) && IS_ENABLED(CONFIG_NICE_VIEW_GEM_ANIMATION)
+// Work queue item to periodically ensure animation is active when USB is connected
+static struct k_work_delayable animation_check_work;
+
+static void ensure_animation_active_work(struct k_work *work) {
+    struct zmk_widget_screen *widget;
+    bool usb_powered = zmk_usb_is_powered();
+    
+    if (usb_powered) {
+        // USB is connected - ensure animation is active
+        SYS_SLIST_FOR_EACH_CONTAINER(&widgets, widget, node) {
+            update_animation_based_on_usb(widget->obj, true);
+        }
+        
+        // Schedule next check in 2 seconds
+        k_work_schedule(&animation_check_work, K_SECONDS(2));
+    }
+}
+#endif
 
 /**
  * Draw buffers
@@ -75,6 +96,38 @@ ZMK_DISPLAY_WIDGET_LISTENER(widget_battery_status, struct battery_status_state,
 ZMK_SUBSCRIPTION(widget_battery_status, zmk_battery_state_changed);
 #if IS_ENABLED(CONFIG_USB_DEVICE_STACK)
 ZMK_SUBSCRIPTION(widget_battery_status, zmk_usb_conn_state_changed);
+
+/**
+ * USB connection state handler - directly updates animation immediately
+ * Reuse battery_status_state since it has usb_present field
+ */
+static struct battery_status_state usb_conn_get_state(const zmk_event_t *_eh) {
+    return (struct battery_status_state){
+        .level = zmk_battery_state_of_charge(),
+        .usb_present = zmk_usb_is_powered(),
+    };
+}
+
+static void usb_conn_update_cb(struct battery_status_state state) {
+    struct zmk_widget_screen *widget;
+    SYS_SLIST_FOR_EACH_CONTAINER(&widgets, widget, node) {
+        // Immediately update animation when USB state changes
+        update_animation_based_on_usb(widget->obj, state.usb_present);
+        
+        // If USB is connected, start periodic checks to ensure animation stays active
+#if IS_ENABLED(CONFIG_NICE_VIEW_GEM_ANIMATION)
+        if (state.usb_present) {
+            k_work_schedule(&animation_check_work, K_SECONDS(1));
+        } else {
+            k_work_cancel_delayable(&animation_check_work);
+        }
+#endif
+    }
+}
+
+ZMK_DISPLAY_WIDGET_LISTENER(widget_usb_conn_status, struct battery_status_state,
+                            usb_conn_update_cb, usb_conn_get_state);
+ZMK_SUBSCRIPTION(widget_usb_conn_status, zmk_usb_conn_state_changed);
 #endif /* IS_ENABLED(CONFIG_USB_DEVICE_STACK) */
 
 /**
@@ -120,6 +173,18 @@ int zmk_widget_screen_init(struct zmk_widget_screen *widget, lv_obj_t *parent) {
     sys_slist_append(&widgets, &widget->node);
     widget_battery_status_init();
     widget_peripheral_status_init();
+    
+#if IS_ENABLED(CONFIG_USB_DEVICE_STACK) && IS_ENABLED(CONFIG_NICE_VIEW_GEM_ANIMATION)
+    // Initialize work queue for periodic animation checks
+    k_work_init_delayable(&animation_check_work, ensure_animation_active_work);
+    
+    // If USB is already connected at init, start the periodic check
+    if (zmk_usb_is_powered()) {
+        k_work_schedule(&animation_check_work, K_SECONDS(1));
+    }
+    
+    widget_usb_conn_status_init();
+#endif
 
     return 0;
 }

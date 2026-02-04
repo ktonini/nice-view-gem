@@ -126,26 +126,29 @@ void update_animation_based_on_usb(lv_obj_t *parent, bool usb_powered) {
     bool is_currently_animated = (existing_anim != NULL && 
                                   lv_obj_check_type(existing_anim, &lv_animimg_class));
     
-    if (needs_animated && is_currently_animated) {
-        // USB is powered and we have an animated animation - make sure it's running
-        // Restart animation in case it was paused or stopped
-        lv_animimg_start(existing_anim);
-        return;
-    }
-    
-    // Only update if state has changed
-    if (needs_animated != is_currently_animated) {
-        // Remove old animation if it exists
-        if (existing_anim != NULL) {
-            lv_obj_del(existing_anim);
-        }
-        
-        // Create new animation based on current USB power state
-        if (current_usb_powered) {
-            create_animated_animation(parent);
+    if (needs_animated) {
+        // USB is powered - ensure animation is active
+        if (is_currently_animated) {
+            // Animation exists and is animated - restart it to ensure it's running
+            // This handles cases where animation might have been paused
+            lv_animimg_start(existing_anim);
         } else {
+            // Need to create animated animation (either doesn't exist or is static)
+            if (existing_anim != NULL) {
+                lv_obj_del(existing_anim);
+            }
+            create_animated_animation(parent);
+        }
+    } else {
+        // USB not powered - ensure animation is static
+        if (is_currently_animated) {
+            // Currently animated but USB is off - switch to static
+            if (existing_anim != NULL) {
+                lv_obj_del(existing_anim);
+            }
             create_static_animation(parent);
         }
+        // If already static, no change needed
     }
 #else
     // No USB support, always animate if enabled
