@@ -17,6 +17,7 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #include <zmk/keymap.h>
 #include <zmk/usb.h>
 #include <zmk/wpm.h>
+#include <zmk/events/activity_state_changed.h>
 
 #include "battery.h"
 #include "layer.h"
@@ -26,6 +27,28 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #include "wpm.h"
 
 static sys_slist_t widgets = SYS_SLIST_STATIC_INIT(&widgets);
+
+#if IS_ENABLED(CONFIG_USB_DEVICE_STACK)
+// Work queue item to prevent display blanking when USB is connected
+static struct k_work_delayable keep_display_active_work;
+
+// Keep display active when USB is connected by reporting activity
+static void keep_display_active_handler(struct k_work *work) {
+    bool usb_powered = zmk_usb_is_powered();
+    
+    if (usb_powered) {
+        // Report activity to prevent display blanking when USB is connected
+        // This keeps the display active and animations running smoothly
+        // We publish an activity_state_changed event to reset the idle timer
+        raise_zmk_activity_state_changed(
+            (struct zmk_activity_state_changed){.state = ZMK_ACTIVITY_ACTIVE});
+        
+        // Schedule next activity report in 10 seconds
+        // This is frequent enough to prevent blanking but not too frequent
+        k_work_schedule(&keep_display_active_work, K_SECONDS(10));
+    }
+}
+#endif
 
 /**
  * Draw buffers
@@ -74,6 +97,13 @@ static void set_battery_status(struct zmk_widget_screen *widget,
                                struct battery_status_state state) {
 #if IS_ENABLED(CONFIG_USB_DEVICE_STACK)
     widget->state.charging = state.usb_present;
+    
+    // If USB is connected, start keeping display active to prevent blanking
+    if (state.usb_present) {
+        k_work_schedule(&keep_display_active_work, K_SECONDS(1));
+    } else {
+        k_work_cancel_delayable(&keep_display_active_work);
+    }
 #endif /* IS_ENABLED(CONFIG_USB_DEVICE_STACK) */
     widget->state.battery = state.level;
 
@@ -223,6 +253,16 @@ int zmk_widget_screen_init(struct zmk_widget_screen *widget, lv_obj_t *parent) {
     widget_layer_status_init();
     widget_output_status_init();
     widget_wpm_status_init();
+
+#if IS_ENABLED(CONFIG_USB_DEVICE_STACK)
+    // Initialize work queue for keeping display active when USB connected
+    k_work_init_delayable(&keep_display_active_work, keep_display_active_handler);
+    
+    // If USB is already connected at init, start keeping display active
+    if (zmk_usb_is_powered()) {
+        k_work_schedule(&keep_display_active_work, K_SECONDS(1));
+    }
+#endif
 
     return 0;
 }
